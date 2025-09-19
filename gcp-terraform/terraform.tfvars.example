@@ -1,0 +1,26 @@
+# GCP Project Configuration
+project_id   = "your-gcp-project-id"
+project_name = "user-management"
+region       = "us-central1"
+zone         = "us-central1-a"
+
+# Application Configuration
+namespace = "user-management"
+app_image = "us-central1-docker.pkg.dev/your-gcp-project-id/user-management-repo/user-management:latest"
+replicas  = 2
+
+# GKE Configuration
+gke_num_nodes    = 2
+gke_machine_type = "e2-medium"
+gke_preemptible  = false
+
+# Database Configuration
+db_tier               = "db-f1-micro"
+db_user              = "postgres"
+db_password          = "your-secure-password"
+db_name              = "users_db"
+db_deletion_protection = true
+
+# Networking Configuration
+enable_ingress = true
+domain_name    = "user-service.yourdomain.com"

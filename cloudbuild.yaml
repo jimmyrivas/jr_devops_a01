@@ -1,0 +1,83 @@
+# Google Cloud Build configuration for CI/CD
+# Author: Jimmy Rivas (jimmy.rivas.r@gmail.com)
+# AI Assistant: Claude (Anthropic)
+
+steps:
+  # Step 1: Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/user-management:${COMMIT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/user-management:latest'
+      - '.'
+    id: 'build-image'
+
+  # Step 2: Push the Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/user-management'
+    id: 'push-image'
+    waitFor: ['build-image']
+
+  # Step 3: Deploy to GKE using Terraform (optional - can be manual)
+  - name: 'hashicorp/terraform:1.5'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        cd gcp-terraform
+        terraform init
+        terraform plan -var="project_id=${PROJECT_ID}" -var="app_image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/user-management:${COMMIT_SHA}"
+        terraform apply -auto-approve -var="project_id=${PROJECT_ID}" -var="app_image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/user-management:${COMMIT_SHA}"
+    id: 'deploy-terraform'
+    waitFor: ['push-image']
+    env:
+      - 'TF_VAR_db_password=${_DB_PASSWORD}'
+
+  # Step 4: Wait for deployment to be ready
+  - name: 'gcr.io/cloud-builders/kubectl'
+    args:
+      - 'rollout'
+      - 'status'
+      - 'deployment/user-service'
+      - '-n'
+      - 'user-management'
+    env:
+      - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+    id: 'wait-deployment'
+    waitFor: ['deploy-terraform']
+
+  # Step 5: Run health check
+  - name: 'gcr.io/cloud-builders/curl'
+    args:
+      - '-f'
+      - 'http://user-service.user-management.svc.cluster.local/health'
+    id: 'health-check'
+    waitFor: ['wait-deployment']
+
+# Substitution variables
+substitutions:
+  _REGION: 'us-central1'
+  _ZONE: 'us-central1-a'
+  _REPO_NAME: 'user-management-repo'
+  _CLUSTER_NAME: 'user-management-gke'
+  _DB_PASSWORD: 'your-secure-password'
+
+# Options
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_MEDIUM'
+  substitution_option: 'ALLOW_LOOSE'
+
+# Timeout
+timeout: '1200s'
+
+# Images to be pushed to registry
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/user-management:${COMMIT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/user-management:latest'
